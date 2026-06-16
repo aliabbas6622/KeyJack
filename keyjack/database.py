@@ -52,6 +52,23 @@ async def get_db():
     async with SessionLocal() as session:
         yield session
 
+class RequestLog(Base):
+    __tablename__ = "request_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    virtual_key_id = Column(String)
+    provider = Column(String)
+    status_code = Column(Integer)
+    latency_ms = Column(Integer)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    error_message = Column(String, nullable=True)
+
+class Cache(Base):
+    __tablename__ = "cache"
+    request_hash = Column(String, primary_key=True, index=True)
+    response_body = Column(String)
+    provider = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

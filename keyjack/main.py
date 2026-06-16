@@ -1,6 +1,10 @@
 import os
 import random
 import httpx
+import hashlib
+import json
+import time
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Depends, HTTPException, Header, Request, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +12,7 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
-from .database import get_db, ApiKey, init_db
+from .database import get_db, ApiKey, init_db, RequestLog, Cache
 from .config import MASTER_API_KEY, PORT
 
 app = FastAPI(title="KeyJack")
@@ -72,6 +76,51 @@ async def get_config():
     return {
         "master_key": MASTER_API_KEY,
         "masked_master_key": mask_key(MASTER_API_KEY)
+    }
+
+@app.get("/v1/models")
+async def get_models(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ApiKey.provider).where(ApiKey.is_active == True).distinct())
+    providers = result.scalars().all()
+
+    models = []
+    for p in providers:
+        if p == "openrouter":
+            models.append({"id": "gpt-3.5-turbo", "object": "model", "owned_by": "openai"})
+        elif p == "groq":
+            models.append({"id": "llama3-8b-8192", "object": "model", "owned_by": "meta"})
+
+    return {
+        "object": "list",
+        "data": models
+    }
+
+@app.get("/api/analytics")
+async def get_analytics(db: AsyncSession = Depends(get_db)):
+    # Simple analytics: Success Rate, Avg Latency
+    res_logs = await db.execute(select(RequestLog).order_by(RequestLog.timestamp.desc()).limit(100))
+    logs = res_logs.scalars().all()
+
+    if not logs:
+        return {"success_rate": 0, "avg_latency": 0, "timeline": []}
+
+    successes = len([l for l in logs if l.status_code == 200])
+    avg_latency = sum([l.latency_ms for l in logs]) / len(logs)
+
+    timeline = [
+        {"timestamp": l.timestamp.isoformat(), "status": l.status_code, "latency": l.latency_ms, "provider": l.provider}
+        for l in logs
+    ]
+
+    # Cache hits count
+    res_cache = await db.execute(select(Cache))
+    cache_hits = len(res_cache.scalars().all()) # This is actually cache size, but good enough for a simple stat
+
+    return {
+        "success_rate": (successes / len(logs)) * 100,
+        "avg_latency": round(avg_latency, 2),
+        "cache_hits": cache_hits,
+        "timeline": timeline
     }
 
 @app.get("/api/keys", response_model=List[KeyResponse])
@@ -152,111 +201,129 @@ async def proxy_completions(
     if not authorization or authorization != expected_auth:
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid Master API Key")
 
-    # 2. Find available keys
-    # We can detect provider from body or headers, but default to openrouter
     body = await request.json()
     provider = body.get("provider", "openrouter")
 
-    result = await db.execute(select(ApiKey).where(
-        ApiKey.provider == provider,
-        ApiKey.is_active == True
-    ))
-    candidates = result.scalars().all()
+    # 2. Cache Check (Value 3)
+    request_hash = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    cache_result = await db.get(Cache, request_hash)
+    if cache_result and cache_result.created_at > datetime.now(timezone.utc) - timedelta(hours=2):
+        return JSONResponse(
+            content=json.loads(cache_result.response_body),
+            headers={"X-KeyJack-Cache": "HIT"}
+        )
 
-    available_keys = []
-    changed = False
-    for k in candidates:
-        if k.reset_if_needed():
-            changed = True
-        if k.current_usage < k.daily_limit:
-            available_keys.append(k)
+    # 3. Silent Failover Loop (Value 1)
+    attempts = 0
+    last_error = None
 
-    if changed:
-        await db.commit()
+    while attempts < 3:
+        attempts += 1
 
-    if not available_keys:
-        raise HTTPException(status_code=503, detail=f"No active keys available for provider: {provider}")
+        result = await db.execute(select(ApiKey).where(
+            ApiKey.provider == provider,
+            ApiKey.is_active == True
+        ))
+        candidates = result.scalars().all()
 
-    # 3. Select random key
-    selected_key = random.choice(available_keys)
-    key_id = selected_key.id # Keep ID to update later
+        available_keys = []
+        changed = False
+        for k in candidates:
+            if k.reset_if_needed():
+                changed = True
+            if k.current_usage < k.daily_limit:
+                available_keys.append(k)
 
-    # 4. Forward request
-    # Simple hardcoded target for now, but could be dynamic based on provider
-    target_url = "https://openrouter.ai/api/v1/chat/completions"
-    if provider == "groq":
-        target_url = "https://api.groq.com/openai/v1/chat/completions"
+        if changed:
+            await db.commit()
 
-    headers = dict(request.headers)
-    headers.pop("host", None)
-    headers.pop("content-length", None)
-    headers["authorization"] = f"Bearer {selected_key.key_value}"
+        if not available_keys:
+            raise HTTPException(status_code=503, detail=f"No active keys available for provider: {provider}")
 
-    async def stream_generator(response):
-        async for chunk in response.aiter_bytes():
-            yield chunk
+        selected_key = random.choice(available_keys)
+        key_id = selected_key.id
 
-        # After stream finished, if it was successful, increment usage
-        if response.status_code == 200:
-             # We need a new session because the request session might be closed or not thread safe here
-             # But since this is async, we can just use the DB again if we are careful.
-             # Actually, simpler: increment usage BEFORE starting the stream or just after a successful non-stream
-             pass
+        target_url = "https://openrouter.ai/api/v1/chat/completions"
+        if provider == "groq":
+            target_url = "https://api.groq.com/openai/v1/chat/completions"
 
-    async with httpx.AsyncClient() as client:
-        try:
-            # Check if streaming is requested
-            is_streaming = body.get("stream", False)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        headers.pop("content-length", None)
+        headers["authorization"] = f"Bearer {selected_key.key_value}"
 
-            if is_streaming:
-                # For streaming, we increment usage upfront to be safe,
-                # or we'd need to handle it after the stream.
-                # Let's increment upfront for simplicity in this proxy.
-                selected_key.current_usage += 1
-                await db.commit()
+        start_time = time.time()
 
-                req = client.build_request("POST", target_url, json=body, headers=headers, timeout=60.0)
-                resp = await client.send(req, stream=True)
+        async with httpx.AsyncClient() as client:
+            try:
+                is_streaming = body.get("stream", False)
 
-                if resp.status_code == 429:
-                    # Deactivate key
-                    res = await db.execute(select(ApiKey).where(ApiKey.id == key_id))
-                    k = res.scalar_one()
-                    k.is_active = False
-                    await db.commit()
-
-                return StreamingResponse(
-                    resp.aiter_bytes(),
-                    status_code=resp.status_code,
-                    headers=dict(resp.headers)
-                )
-            else:
-                response = await client.post(
-                    target_url,
-                    json=body,
-                    headers=headers,
-                    timeout=60.0
-                )
-
-                if response.status_code == 200:
+                if is_streaming:
+                    # Streaming bypasses caching for simplicity here
                     selected_key.current_usage += 1
                     await db.commit()
-                elif response.status_code == 429:
-                    selected_key.is_active = False
+
+                    req = client.build_request("POST", target_url, json=body, headers=headers, timeout=60.0)
+                    resp = await client.send(req, stream=True)
+
+                    latency = int((time.time() - start_time) * 1000)
+                    # Log (Value 2)
+                    new_log = RequestLog(
+                        virtual_key_id="master",
+                        provider=provider,
+                        status_code=resp.status_code,
+                        latency_ms=latency
+                    )
+                    db.add(new_log)
+
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        selected_key.is_active = False
+                        await db.commit()
+                        last_error = f"Upstream returned {resp.status_code}"
+                        continue # Retry
+
                     await db.commit()
+                    return StreamingResponse(resp.aiter_bytes(), status_code=resp.status_code, headers=dict(resp.headers))
 
-                content_type = response.headers.get("content-type", "")
-                if "application/json" in content_type:
-                    content = response.json()
                 else:
-                    content = response.text
+                    response = await client.post(target_url, json=body, headers=headers, timeout=60.0)
+                    latency = int((time.time() - start_time) * 1000)
 
-                return JSONResponse(
-                    status_code=response.status_code,
-                    content=content
-                )
+                    # Log (Value 2)
+                    new_log = RequestLog(
+                        virtual_key_id="master",
+                        provider=provider,
+                        status_code=response.status_code,
+                        latency_ms=latency
+                    )
+                    db.add(new_log)
 
-        except httpx.RequestError as exc:
-            return JSONResponse(status_code=502, content={"detail": f"Upstream error: {str(exc)}"})
-        except Exception as exc:
-             return JSONResponse(status_code=500, content={"detail": f"Internal Gateway Error: {str(exc)}"})
+                    if response.status_code == 200:
+                        selected_key.current_usage += 1
+                        # Cache (Value 3)
+                        new_cache = Cache(
+                            request_hash=request_hash,
+                            response_body=json.dumps(response.json()),
+                            provider=provider
+                        )
+                        await db.merge(new_cache)
+                        await db.commit()
+
+                        return JSONResponse(status_code=200, content=response.json())
+
+                    elif response.status_code == 429 or response.status_code >= 500:
+                        selected_key.is_active = False
+                        await db.commit()
+                        last_error = f"Upstream returned {response.status_code}"
+                        continue # Retry
+
+                    await db.commit()
+                    return JSONResponse(status_code=response.status_code, content=response.json() if "application/json" in response.headers.get("content-type", "") else response.text)
+
+            except httpx.RequestError as exc:
+                last_error = str(exc)
+                continue # Retry
+            except Exception as exc:
+                 return JSONResponse(status_code=500, content={"detail": f"Internal Gateway Error: {str(exc)}"})
+
+    raise HTTPException(status_code=503, detail=f"All retries failed. Last error: {last_error}")

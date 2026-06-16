@@ -1,135 +1,129 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KeyJack Dashboard</title>
+    <title>KeyJack | Unified API</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
         body {
-            font-family: 'Fira Code', monospace;
-            background-color: #0a0a0a;
-            color: #00ff00;
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+            color: #111827;
         }
-        .neon-border {
-            border: 1px solid #00ff00;
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
-        }
-        .neon-text {
-            text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
-        }
-        .bg-darker {
-            background-color: #111111;
-        }
-        input, select {
-            background-color: #1a1a1a !important;
-            border: 1px solid #333 !important;
-            color: #00ff00 !important;
-        }
-        input:focus, select:focus {
-            outline: none !important;
-            border-color: #00ff00 !important;
-        }
-        button {
-            transition: all 0.2s;
-        }
-        button:hover {
-            box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        .card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
         }
         .progress-bar {
-            height: 4px;
-            background-color: #222;
+            height: 6px;
+            background-color: #f3f4f6;
+            border-radius: 3px;
+            overflow: hidden;
         }
         .progress-fill {
             height: 100%;
-            background-color: #00ff00;
-            box-shadow: 0 0 5px #00ff00;
+            background-color: #10b981;
         }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="p-6 md:p-12">
     <div class="max-w-6xl mx-auto">
         <!-- Header -->
-        <header class="flex flex-col md:flex-row justify-between items-center mb-12 border-b border-green-900 pb-6">
-            <div class="mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold neon-text tracking-tighter">KEYJACK_</h1>
-                <p class="text-xs opacity-70 mt-1">UNIFIED_API_GATEWAY_V1.0</p>
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10">
+            <div>
+                <h1 class="text-2xl font-semibold tracking-tight">KeyJack</h1>
+                <p class="text-sm text-gray-500">Value-Driven API Gateway</p>
             </div>
-            <div class="bg-darker p-3 rounded neon-border flex items-center space-x-4">
-                <span class="text-xs text-green-700">MASTER_KEY:</span>
-                <span id="masterKeyDisplay" class="text-sm font-mono opacity-80">********************</span>
-                <button onclick="copyMasterKey()" class="text-xs bg-green-900 hover:bg-green-700 text-white px-2 py-1 rounded">COPY</button>
+            <div class="mt-4 md:mt-0 flex items-center space-x-3 bg-white border border-gray-200 px-4 py-2 rounded-lg">
+                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Master Key</span>
+                <span id="masterKeyDisplay" class="text-sm font-mono text-gray-700">••••••••••••</span>
+                <button onclick="copyMasterKey()" class="text-xs font-semibold text-blue-600 hover:text-blue-700">Copy</button>
             </div>
         </header>
 
-        <!-- Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div class="bg-darker p-6 rounded neon-border">
-                <div class="text-xs text-green-700 mb-1">TOTAL_KEYS</div>
-                <div id="statTotalKeys" class="text-3xl font-bold">0</div>
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            <div class="card p-5">
+                <div class="text-xs font-medium text-gray-400 uppercase mb-1">Total Keys</div>
+                <div id="statTotalKeys" class="text-2xl font-semibold">0</div>
             </div>
-            <div class="bg-darker p-6 rounded neon-border">
-                <div class="text-xs text-green-700 mb-1">ACTIVE_KEYS</div>
-                <div id="statActiveKeys" class="text-3xl font-bold text-green-400">0</div>
+            <div class="card p-5">
+                <div class="text-xs font-medium text-gray-400 uppercase mb-1">Success Rate</div>
+                <div id="statSuccessRate" class="text-2xl font-semibold text-emerald-600">0%</div>
             </div>
-            <div class="bg-darker p-6 rounded neon-border">
-                <div class="text-xs text-green-700 mb-1">TOTAL_USAGE_TODAY</div>
-                <div id="statTotalUsage" class="text-3xl font-bold">0</div>
+            <div class="card p-5">
+                <div class="text-xs font-medium text-gray-400 uppercase mb-1">Avg Latency</div>
+                <div id="statAvgLatency" class="text-2xl font-semibold">0ms</div>
+            </div>
+            <div class="card p-5">
+                <div class="text-xs font-medium text-gray-400 uppercase mb-1">Cache Hits</div>
+                <div id="statCacheHits" class="text-2xl font-semibold text-blue-600">0</div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Form -->
+            <!-- Registration Form -->
             <div class="lg:col-span-1">
-                <div class="bg-darker p-6 rounded neon-border">
-                    <h2 class="text-xl font-bold mb-6 border-b border-green-900 pb-2">ADD_NEW_KEY</h2>
+                <div class="card p-6">
+                    <h2 class="text-sm font-semibold mb-5 text-gray-900">Add Provider Key</h2>
                     <form id="addKeyForm" class="space-y-4">
                         <div>
-                            <label class="block text-xs text-green-700 mb-1">PROVIDER</label>
-                            <select id="provider" class="w-full p-2 rounded">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Provider</label>
+                            <select id="provider" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500">
                                 <option value="openrouter">OpenRouter</option>
                                 <option value="groq">Groq</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs text-green-700 mb-1">API_KEY_VALUE</label>
-                            <input type="password" id="keyValue" required class="w-full p-2 rounded" placeholder="sk-...">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">API Key</label>
+                            <input type="password" id="keyValue" required class="w-full text-sm border-gray-300 border rounded-md p-2" placeholder="sk-...">
                         </div>
                         <div>
-                            <label class="block text-xs text-green-700 mb-1">DAILY_LIMIT</label>
-                            <input type="number" id="dailyLimit" value="100" class="w-full p-2 rounded">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Daily Limit</label>
+                            <input type="number" id="dailyLimit" value="100" class="w-full text-sm border-gray-300 border rounded-md p-2">
                         </div>
-                        <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-black font-bold py-2 rounded mt-4">REGISTER_KEY</button>
+                        <button type="submit" class="w-full bg-gray-900 hover:bg-black text-white text-sm font-medium py-2 rounded-md transition-colors">Register Key</button>
                     </form>
+                </div>
+
+                <!-- Timeline Section (Value 2) -->
+                <div class="card p-6 mt-6">
+                    <h2 class="text-sm font-semibold mb-4 text-gray-900">Live Timeline</h2>
+                    <div id="timelineContainer" class="space-y-3">
+                        <!-- Timeline entries -->
+                    </div>
                 </div>
             </div>
 
-            <!-- Table -->
+            <!-- Key Pool Table -->
             <div class="lg:col-span-2">
-                <div class="bg-darker rounded neon-border overflow-hidden">
-                    <div class="p-4 border-b border-green-900 flex justify-between items-center">
-                        <h2 class="text-xl font-bold">KEY_POOL</h2>
-                        <button onclick="fetchKeys()" class="text-xs border border-green-900 px-2 py-1 hover:bg-green-900">REFRESH</button>
+                <div class="card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        <h2 class="text-sm font-semibold text-gray-900">Active Key Pool</h2>
+                        <button onclick="fetchData()" class="text-xs font-medium text-gray-500 hover:text-gray-700">Refresh</button>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
-                            <thead class="text-xs text-green-700 uppercase border-b border-green-900">
+                            <thead class="text-[10px] font-semibold text-gray-400 uppercase bg-gray-50">
                                 <tr>
                                     <th class="px-6 py-3">Provider</th>
                                     <th class="px-6 py-3">Key</th>
-                                    <th class="px-6 py-3">Usage</th>
+                                    <th class="px-6 py-3">Daily Usage</th>
                                     <th class="px-6 py-3">Status</th>
-                                    <th class="px-6 py-3 text-right">Actions</th>
+                                    <th class="px-6 py-3"></th>
                                 </tr>
                             </thead>
-                            <tbody id="keysTableBody">
-                                <!-- Data will be loaded here -->
+                            <tbody id="keysTableBody" class="divide-y divide-gray-100 text-sm">
+                                <!-- Table content -->
                             </tbody>
                         </table>
                     </div>
-                    <div id="noKeysMessage" class="p-12 text-center text-green-900 hidden">
-                        NO_KEYS_DETECTED_IN_POOL
+                    <div id="noKeysMessage" class="p-10 text-center text-gray-400 hidden">
+                        No keys registered in the pool.
                     </div>
                 </div>
             </div>
@@ -137,16 +131,20 @@
     </div>
 
     <script>
-        let config = { master_key: "NOT_LOADED" };
+        let config = {};
+
+        async function fetchData() {
+            await fetchConfig();
+            await fetchKeys();
+            await fetchAnalytics();
+        }
 
         async function fetchConfig() {
             try {
                 const response = await fetch('/api/config');
                 config = await response.json();
                 document.getElementById('masterKeyDisplay').textContent = config.masked_master_key;
-            } catch (error) {
-                console.error('Error fetching config:', error);
-            }
+            } catch (error) {}
         }
 
         async function fetchKeys() {
@@ -154,87 +152,79 @@
                 const response = await fetch('/api/keys');
                 const keys = await response.json();
                 renderKeys(keys);
-                updateStats(keys);
-            } catch (error) {
-                console.error('Error fetching keys:', error);
-            }
+                document.getElementById('statTotalKeys').textContent = keys.length;
+            } catch (error) {}
+        }
+
+        async function fetchAnalytics() {
+            try {
+                const response = await fetch('/api/analytics');
+                const data = await response.json();
+                document.getElementById('statSuccessRate').textContent = `${Math.round(data.success_rate)}%`;
+                document.getElementById('statAvgLatency').textContent = `${data.avg_latency}ms`;
+                document.getElementById('statCacheHits').textContent = data.cache_hits;
+                renderTimeline(data.timeline);
+            } catch (error) {}
         }
 
         function renderKeys(keys) {
             const tbody = document.getElementById('keysTableBody');
             const emptyMsg = document.getElementById('noKeysMessage');
-
             tbody.innerHTML = '';
 
             if (keys.length === 0) {
                 emptyMsg.classList.remove('hidden');
                 return;
-            } else {
-                emptyMsg.classList.add('hidden');
             }
+            emptyMsg.classList.add('hidden');
 
             keys.forEach(key => {
                 const usagePercent = Math.min((key.current_usage / key.daily_limit) * 100, 100);
-                const statusClass = key.is_active ? 'text-green-400' : 'text-red-500';
-                const statusText = key.is_active ? 'ACTIVE' : 'EXHAUSTED';
-
                 const row = document.createElement('tr');
-                row.className = 'border-b border-green-900/30 hover:bg-green-900/10';
+                row.className = 'hover:bg-gray-50 transition-colors';
 
-                // Create cells manually to avoid XSS
-                const providerCell = document.createElement('td');
-                providerCell.className = 'px-6 py-4 font-bold text-xs';
-                providerCell.textContent = key.provider.toUpperCase();
-
-                const keyCell = document.createElement('td');
-                keyCell.className = 'px-6 py-4 text-xs opacity-60';
-                keyCell.textContent = key.key_value;
-
-                const usageCell = document.createElement('td');
-                usageCell.className = 'px-6 py-4';
-                usageCell.innerHTML = `
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs">${key.current_usage}/${key.daily_limit}</span>
-                        <div class="flex-1 min-w-[60px] progress-bar rounded">
-                            <div class="progress-fill rounded" style="width: ${usagePercent}%"></div>
+                row.innerHTML = `
+                    <td class="px-6 py-4 font-medium text-gray-900">${key.provider.charAt(0).toUpperCase() + key.provider.slice(1)}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-gray-500">${key.key_value}</td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs tabular-nums text-gray-600">${key.current_usage}/${key.daily_limit}</span>
+                            <div class="flex-1 min-w-[80px] progress-bar">
+                                <div class="progress-fill" style="width: ${usagePercent}%"></div>
+                            </div>
                         </div>
-                    </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${key.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
+                            ${key.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <button onclick="resetKey(${key.id})" class="text-xs text-gray-400 hover:text-gray-900 mr-3">Reset</button>
+                        <button onclick="deleteKey(${key.id})" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+                    </td>
                 `;
-
-                const statusCell = document.createElement('td');
-                statusCell.className = `px-6 py-4 text-xs font-bold ${statusClass}`;
-                statusCell.textContent = statusText;
-
-                const actionsCell = document.createElement('td');
-                actionsCell.className = 'px-6 py-4 text-right space-x-2';
-
-                const resetBtn = document.createElement('button');
-                resetBtn.className = 'text-[10px] border border-green-800 px-2 py-1 hover:bg-green-800';
-                resetBtn.textContent = 'RESET';
-                resetBtn.onclick = () => resetKey(key.id);
-
-                const delBtn = document.createElement('button');
-                delBtn.className = 'text-[10px] border border-red-900 text-red-900 px-2 py-1 hover:bg-red-900 hover:text-white';
-                delBtn.textContent = 'DEL';
-                delBtn.onclick = () => deleteKey(key.id);
-
-                actionsCell.appendChild(resetBtn);
-                actionsCell.appendChild(delBtn);
-
-                row.appendChild(providerCell);
-                row.appendChild(keyCell);
-                row.appendChild(usageCell);
-                row.appendChild(statusCell);
-                row.appendChild(actionsCell);
-
                 tbody.appendChild(row);
             });
         }
 
-        function updateStats(keys) {
-            document.getElementById('statTotalKeys').textContent = keys.length;
-            document.getElementById('statActiveKeys').textContent = keys.filter(k => k.is_active).length;
-            document.getElementById('statTotalUsage').textContent = keys.reduce((acc, k) => acc + k.current_usage, 0);
+        function renderTimeline(logs) {
+            const container = document.getElementById('timelineContainer');
+            container.innerHTML = '';
+
+            logs.slice(0, 5).forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between text-xs';
+                const color = log.status === 200 ? 'text-emerald-500' : 'text-red-500';
+                div.innerHTML = `
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2 h-2 rounded-full ${log.status === 200 ? 'bg-emerald-500' : 'bg-red-500'}"></span>
+                        <span class="text-gray-600">${log.provider}</span>
+                    </div>
+                    <div class="text-gray-400">${log.latency}ms</div>
+                `;
+                container.appendChild(div);
+            });
         }
 
         async function addKey(e) {
@@ -243,55 +233,36 @@
             const keyValue = document.getElementById('keyValue').value;
             const dailyLimit = document.getElementById('dailyLimit').value;
 
-            try {
-                const response = await fetch('/api/keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ provider, key_value: keyValue, daily_limit: parseInt(dailyLimit) })
-                });
-                if (response.ok) {
-                    document.getElementById('addKeyForm').reset();
-                    fetchKeys();
-                } else {
-                    const err = await response.json();
-                    alert(err.detail || 'Failed to add key');
-                }
-            } catch (error) {
-                console.error('Error adding key:', error);
+            const response = await fetch('/api/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, key_value: keyValue, daily_limit: parseInt(dailyLimit) })
+            });
+            if (response.ok) {
+                document.getElementById('addKeyForm').reset();
+                fetchData();
             }
         }
 
         async function resetKey(id) {
-            try {
-                await fetch(`/api/keys/${id}/reset`, { method: 'POST' });
-                fetchKeys();
-            } catch (error) {
-                console.error('Error resetting key:', error);
-            }
+            await fetch(`/api/keys/${id}/reset`, { method: 'POST' });
+            fetchData();
         }
 
         async function deleteKey(id) {
-            if (!confirm('CONFIRM_KEY_DELETION?')) return;
-            try {
-                await fetch(`/api/keys/${id}`, { method: 'DELETE' });
-                fetchKeys();
-            } catch (error) {
-                console.error('Error deleting key:', error);
-            }
+            if (!confirm('Delete this key?')) return;
+            await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+            fetchData();
         }
 
         function copyMasterKey() {
             navigator.clipboard.writeText(config.master_key);
-            alert('MASTER_KEY_COPIED_TO_CLIPBOARD');
+            alert('Master Key copied.');
         }
 
         document.getElementById('addKeyForm').addEventListener('submit', addKey);
-
-        // Initial load
-        fetchConfig();
-        fetchKeys();
-        // Auto refresh every 30 seconds
-        setInterval(fetchKeys, 30000);
+        fetchData();
+        setInterval(fetchData, 10000);
     </script>
 </body>
 </html>
